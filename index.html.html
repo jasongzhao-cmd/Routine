@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#1E293B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>Routine Board</title>
+
+<!--
+  ROUTINE BOARD – Zoe & Billy
+  ---------------------------------------------------------------
+  One self-contained file: no libraries, fonts, images or internet needed.
+  Built for a 7-inch Lenovo Tab M7 (1024x600) in Chrome or Fully Kiosk Browser.
+
+  How it works
+  • Morning routine shows 5:00 AM – 9:59 AM, School day 10:00 AM – 5:29 PM
+    and Evening 5:30 PM – 4:59 AM. The ☀️ / 🏫 / 🌙 pills override this until
+    the next automatic switch. Weekends (or a day a parent marks as "no
+    school") skip the School day: it is not needed for the streak and the
+    morning list stays on screen through the day.
+  • Tap a task to tick it (tap again to undo). Finishing a whole routine
+    earns +1 bonus star (once per routine per day).
+  • Finishing ALL routines for the day (morning, school day, evening) extends the 🔥 streak.
+  • Everything is saved in localStorage; ticks reset at midnight,
+    stars and streaks are kept.
+  • PARENTS: press and hold the date (top left) for 3 seconds.
+-->
+
+<style>
+/* ============================================================
+   1. BASE
+   ============================================================ */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #0F172A;
+  color: #0F172A;
+  font-family: "Trebuchet MS", "Arial Rounded MT Bold", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+body { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; }
+button { -webkit-appearance: none; appearance: none; font: inherit; color: inherit; border: 0; border-radius: 0; background: none; padding: 0; margin: 0; cursor: pointer; }
+[hidden] { display: none !important; }
+
+/* ============================================================
+   2. TOP HEADER BAR (max 64px)
+   ============================================================ */
+#top {
+  flex: 0 0 auto;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: #1E293B;
+  color: #fff;
+}
+#top > * + * { margin-left: 8px; }
+body[data-mode="evening"] #top { background: #1E1B4B; }
+body[data-mode="day"] #top { background: #134E4A; }
+
+.dateblk { line-height: 1.15; padding: 4px 6px; border-radius: 10px; white-space: nowrap; }
+.dow { font-size: 20px; font-weight: 800; }
+.dmy { font-size: 13px; opacity: .85; }
+
+.clock { font-size: 34px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.clock small { font-size: 15px; margin-left: 4px; opacity: .85; }
+
+.ctrls { display: flex; align-items: center; }
+.ctrls > * + * { margin-left: 8px; }
+.pill {
+  height: 44px; padding: 0 14px; border-radius: 22px;
+  border: 2px solid rgba(255,255,255,.45);
+  color: #fff; font-size: 16px; font-weight: 800; white-space: nowrap;
+}
+.pill.on { background: #FDE047; border-color: #FDE047; color: #1E293B; }
+.iconbtn {
+  width: 44px; height: 44px; border-radius: 22px;
+  border: 2px solid rgba(255,255,255,.45);
+  font-size: 20px; line-height: 1; color: #fff;
+}
+
+@media (max-width: 800px) {
+  #top { padding: 0 8px; }
+  .dow { font-size: 17px; }
+  .dmy { font-size: 12px; }
+  .clock { font-size: 28px; }
+  .clock small { font-size: 13px; }
+  .pill { padding: 0 12px; font-size: 18px; }
+  .pill .word { display: none; }
+  .ctrls > * + * { margin-left: 6px; }
+}
+
+/* ============================================================
+   3. TABS (only shown in short portrait viewports)
+   ============================================================ */
+.tabbar { display: none; flex: 0 0 auto; padding: 8px 8px 0; }
+.tabbar > * + * { margin-left: 8px; }
+.tabbar button {
+  flex: 1; height: 48px; border-radius: 14px;
+  background: rgba(255,255,255,.12); color: #fff;
+  font-size: 20px; font-weight: 800; border: 3px solid transparent;
+}
+.tabbar button.on { background: var(--c); border-color: rgba(255,255,255,.6); }
+
+/* ============================================================
+   4. BOARD LAYOUT (landscape = side by side, portrait = stacked)
+   ============================================================ */
+#board { flex: 1 1 0; min-height: 0; display: flex; padding: 8px; }
+#board > * + * { margin-left: 8px; }
+@media (orientation: portrait) {
+  #board { flex-direction: column; }
+  #board > * + * { margin-left: 0; margin-top: 8px; }
+}
+@media (orientation: portrait) and (max-height: 900px) {
+  .tabbar { display: flex; }
+  .panel { display: none; }
+  .panel.active { display: flex; }
+  #board > .panel { margin: 0; }
+}
+
+/* ---- Kid colour themes ---- */
+.panel.zoe {
+  --head: #7C3AED; --bar: #5EEAD4; --bd: #C4B5FD;
+  --cardA: #EDE9FE; --cardB: #CCFBF1; --panelBg: #FAF5FF; --ink: #2E1065;
+}
+.panel.billy {
+  --head: #0284C7; --bar: #6EE7B7; --bd: #7DD3FC;
+  --cardA: #E0F2FE; --cardB: #DCFCE7; --panelBg: #F0F9FF; --ink: #0C4A6E;
+}
+
+.panel {
+  position: relative;
+  flex: 1 1 0; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  border-radius: 16px; overflow: hidden;
+  background: var(--panelBg);
+  box-shadow: 0 3px 0 rgba(0,0,0,.25);
+}
+
+/* ---- Panel header: name, stars, streak, progress ---- */
+.phead { flex: 0 0 auto; height: 96px; display: flex; flex-direction: column; justify-content: center; background: var(--head); color: #fff; padding: 8px 12px 10px; }
+.prow { display: flex; align-items: center; justify-content: space-between; }
+.name { font-size: 30px; font-weight: 900; line-height: 1; }
+.tag { font-size: 14px; font-weight: 700; opacity: .92; margin-top: 3px; }
+.badges { display: flex; align-items: center; }
+.badges > * + * { margin-left: 8px; }
+.stars {
+  background: #fff; color: var(--head);
+  font-size: 22px; font-weight: 900; line-height: 1;
+  padding: 7px 12px; border-radius: 20px; white-space: nowrap;
+}
+.streak {
+  background: rgba(0,0,0,.25); color: #fff;
+  font-size: 15px; font-weight: 800; line-height: 1;
+  padding: 9px 12px; border-radius: 20px; white-space: nowrap;
+}
+.streak.dim { opacity: .75; }
+.bump { animation: bump .5s ease; }
+@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.3); } 100% { transform: scale(1); } }
+
+.prog { display: flex; align-items: center; margin-top: 7px; }
+.prog > * + * { margin-left: 10px; }
+.bar { flex: 1; height: 18px; border-radius: 9px; background: rgba(255,255,255,.3); overflow: hidden; }
+.bar i {
+  display: block; width: 100%; height: 100%; border-radius: 9px;
+  background: var(--bar);
+  transform-origin: left center; transform: scaleX(0);
+  transition: transform .35s ease;
+}
+.bar.full i { background: #FDE047; }
+.count { min-width: 64px; text-align: right; font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   5. TASK CARDS (touch targets are at least 56px tall)
+   ============================================================ */
+.tasks {
+  position: absolute; top: 96px; left: 0; right: 0; bottom: 0;
+  display: grid; grid-gap: 8px; gap: 8px; padding: 10px;
+  grid-template-columns: 1fr;
+  grid-auto-rows: minmax(56px, 1fr);
+  overflow-y: auto; -webkit-overflow-scrolling: touch;   /* safety net only */
+}
+.tasks.two { grid-template-columns: 1fr 1fr; }
+.tasks.two .card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+
+.card {
+  display: flex; align-items: center; cursor: pointer;
+  width: 100%; min-height: 56px; padding: 3px 10px;
+  border-radius: 16px; border: 3px solid var(--bd);
+  background: var(--cardA); color: var(--ink);
+  text-align: left;
+  box-shadow: 0 3px 0 rgba(0,0,0,.14);                  /* hard shadow: no blur, light on the GPU */
+  transition: background-color .2s, border-color .2s, transform .1s;
+}
+.card:nth-child(even) { background: var(--cardB); }
+.card:active { transform: scale(.97); }
+.card > * + * { margin-left: 8px; }
+
+.ico {
+  flex: 0 0 auto; width: 50px; height: 50px; border-radius: 50%;
+  background: #fff; display: flex; align-items: center; justify-content: center;
+}
+.ico svg { width: 44px; height: 44px; display: block; }
+
+.lbl { flex: 1 1 auto; min-width: 0; font-size: 18px; font-weight: 800; line-height: 1.1; }
+
+.chk {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid var(--bd); background: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.chk svg { width: 22px; height: 22px; display: block; }
+.chk path {
+  fill: none; stroke: #15803D; stroke-width: 4;
+  stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 24; stroke-dashoffset: 24;
+  transition: stroke-dashoffset .3s ease .05s;
+}
+
+/* Completed state: bright green fill + animated tick */
+.card.done { background: #4ADE80; border-color: #16A34A; color: #052E16; }
+.card.done .chk { border-color: #16A34A; }
+.card.done .chk path { stroke-dashoffset: 0; }
+.card.pop { animation: pop .3s ease; }
+@keyframes pop { 0% { transform: scale(.94); } 60% { transform: scale(1.04); } 100% { transform: scale(1); } }
+
+/* ============================================================
+   6. CELEBRATION (confetti canvas + banner)
+   ============================================================ */
+#confetti { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 40; display: none; }
+#banner {
+  position: fixed; left: 50%; top: 50%; z-index: 45;
+  min-width: 300px; max-width: 90%; padding: 18px 28px; border-radius: 16px;
+  color: #fff; text-align: center;
+  border: 4px solid #fff; box-shadow: 0 6px 0 rgba(0,0,0,.3);
+  opacity: 0; pointer-events: none;
+  transform: translate(-50%, -50%) scale(.8);
+  transition: opacity .25s, transform .25s;
+}
+#banner.show { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+#banner .bt { font-size: 38px; font-weight: 900; line-height: 1.1; }
+#banner .bs { font-size: 22px; font-weight: 800; margin-top: 8px; }
+
+/* ============================================================
+   7. PARENT CONTROLS MODAL
+   ============================================================ */
+.modal {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  padding: 10px; background: rgba(15,23,42,.85);
+}
+.sheet { width: 100%; max-width: 620px; max-height: 100%; overflow-y: auto; background: #fff; border-radius: 16px; padding: 14px; }
+.sheet h2 { margin: 0 0 4px; font-size: 22px; }
+.sheet p { margin: 0 0 10px; font-size: 14px; color: #475569; }
+.pcs { display: flex; }
+.pcs > * + * { margin-left: 10px; }
+@media (max-width: 560px) { .pcs { flex-direction: column; } .pcs > * + * { margin-left: 0; margin-top: 10px; } }
+.pc { flex: 1; border: 3px solid #CBD5E1; border-radius: 14px; overflow: hidden; }
+.pc h3 { margin: 0; padding: 8px 12px; color: #fff; font-size: 20px; }
+.prow2 { display: flex; align-items: center; padding: 8px 10px; }
+.prow2 > * + * { margin-left: 8px; }
+.pl { flex: 1; font-size: 15px; font-weight: 700; }
+.pv { min-width: 34px; text-align: center; font-size: 22px; }
+.sq { width: 56px; height: 56px; border-radius: 14px; background: #E2E8F0; font-size: 30px; font-weight: 800; }
+.act { min-height: 56px; padding: 6px 12px; border-radius: 14px; background: #E2E8F0; font-size: 15px; font-weight: 800; }
+.act.armed { background: #FDE047; }
+.pschool > * + * { margin-left: 8px; }
+.pschool { display: flex; align-items: center; margin: 0 0 10px; padding: 8px 10px; border: 3px solid #CBD5E1; border-radius: 14px; }
+.closebtn { display: block; width: 100%; min-height: 56px; margin-top: 12px; border-radius: 14px; background: #1E293B; color: #fff; font-size: 20px; font-weight: 800; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .bar i, #banner, .chk path { transition: none; }
+  .card.pop, .bump { animation: none; }
+}
+</style>
+<script type="text/javascript" nonce="79b7ef39ca2641b490aaf77deef" src="//local.adguard.org?ts=1795136801874&amp;type=content-script&amp;dmn=mail-attachment.googleusercontent.com&amp;url=https%3A%2F%2Fmail-attachment.googleusercontent.com%2Fattachment%2Fu%2F0%2F%3Fui%3D2%26ik%3Dafcb194842%26attid%3D0.1%26permmsgid%3Dmsg-f%3A1882338583183378354%26th%3D1a1f68f7e5a847b2%26view%3Datt%26zw%26disp%3Dsafe%26saddbat%3DANGjdJ-3WMZSNCrbWz_ECV6RcRk7X1HOsJkE9JjczBNkChj4NUhvCPTnTUsaLvQJG4-WQHuVKxZLzbm1xx580tLvf1yhVsgKLJ-Qp9-U4Uc1O6MsQm3Iiel1KWVELHL1oXb3dknT2ZwUWifoGQKyFS9Mitqx7fFNyS3h9Mowg7Usq2F2dO0XxGCvcCHzKCP3aDS28Xq2yLJM0A42q97m2W8u36r3RWBga-rS6q3-QVoVShZzSO6tSvs1_-koV-5a-DyuMF5-K3NP6rGp0-lIEaXQifwQZN_OkkC9N_vA-BgiPewPRyqkD4HkRUA7neQC_Oabi_Nv0gF4Wmd_BDkTn4vGF-Kbw2Bqd9VZHxolnKv00-76630cpYIIzgGqKiWXlFTaUa9Ei9MbCoTECbArZMOXcHZlBMB7LlPdPaQK_ZbmsKTY1aB1i_MS8WsucnjOTr6Zb68uEpmiVJRhvWsOkJR4cflFvf79bhNlLULKeb7JwPI_Bh9A8W8ZoD3HOYmcitioNtb06bUNWLNqg-yKraHURnINLUWHqgTzNc1lsm5Bl3Tay3feFIzvCtDpnjmgjqbnPFg6520PFnECNYbanCs-leU-9j6HWsT8BC7gb6XcqnrMOmJb-HIco6eHDtHCp2BuHgbduQGIDXQ-uIkRxABCOEpfQKRvipLFWCNfI9UezaoOT9ZcRCCb9c_dMlC0ezWMm7Mo2X1tvKxo34sEaOpCJll9WwSXwN6u92GpDSIOcUU6PTHdQM8bJzFSHpUMPlxhFkzQQVmyU7PLlNJ2lsK7YWV4Ggn4o4R_QIhzRdziybDbsd-_EBXRSKA22mA0EME86r1q8iliqHvNOFW_G9EsW1axOl5MLgHFDtt7xD0OYB_P4k--3w6_FMQIEaEGhB7rcOpJ7-yyH89UCE1zh8z3ENEzC2s7ijv5MGdxd_2sb44wO4UxuKZCtUhDmUnEo_MBclDyaVxhYFjeaUOzQfKZeXfy9NQXnE6UfGJq2E5cdOrwDBR0ZvjqOhFz3a-AEVpAZni6QYmL_IlmQuk59ZCvNp1H61JyGlj6EbUBugDyMXZx_W2aVncExe3dg7-JX3xKKzwgRIV82XEDWlHApfHhpLPZPV_EDi_Ne9iRespwzsLLQp5WKseo2YKkwgSDil17W935RsOUV8suqHLQ&amp;app=chrome.exe&amp;css=3&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1&amp;stealth=1&amp;st-dnt"></script><script type="text/javascript" nonce="79b7ef39ca2641b490aaf77deef" src="//local.adguard.org?ts=1795136801874&amp;name=AdGuard%20Extra&amp;name=AdGuard%20Popup%20Blocker&amp;type=user-script"></script></head>
+
+<body data-mode="morning">
+
+<!-- ===== Top header bar ===== -->
+<header id="top">
+  <div class="dateblk" id="dateBlk">
+    <div class="dow" id="dow">&nbsp;</div>
+    <div class="dmy" id="dmy">&nbsp;</div>
+  </div>
+  <div class="clock"><span id="time">0:00</span><small id="ampm">AM</small></div>
+  <div class="ctrls">
+    <button class="pill" id="btnMorning" type="button" aria-label="Morning">☀️<span class="word"> Morning</span></button>
+    <button class="pill" id="btnDay" type="button" aria-label="School day">🏫<span class="word"> School day</span></button>
+    <button class="pill" id="btnEvening" type="button" aria-label="Evening">🌙<span class="word"> Evening</span></button>
+    <button class="iconbtn" id="btnMute" type="button" aria-label="Sound on or off">🔊</button>
+  </div>
+</header>
+
+<nav class="tabbar" id="tabs"></nav>
+<main id="board">
+  <!-- Shown only if JavaScript is NOT running; the script replaces this as soon as it starts -->
+  <div id="loadmsg" style="flex:1;color:#fff;padding:24px;font-size:22px;line-height:1.4;font-weight:700;">
+    Loading the board&hellip;<br>
+    <span style="font-size:17px;font-weight:400;">If this message stays on screen, this page is not allowed to run JavaScript here
+    (for example in the Files or Mail preview). Open it in Safari from a web address instead.</span>
+  </div>
+</main>
+
+<script>
+/* On-screen error reporter: if anything goes wrong, show the message instead of a blank page */
+window.onerror = function (msg, src, line) {
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:99;background:#7F1D1D;color:#fff;padding:10px 12px;font:14px/1.3 Menlo,monospace;border-radius:8px;';
+  d.textContent = 'Error: ' + msg + ' (line ' + line + ')';
+  if (document.body) { document.body.appendChild(d); }
+};
+</script>
+<canvas id="confetti"></canvas>
+<div id="banner" role="status"></div>
+
+<!-- Parent controls (hidden until the date is held for 3 seconds) -->
+<div class="modal" id="parentModal" hidden>
+  <div class="sheet">
+    <h2>Parent controls</h2>
+    <p>Resetting today’s tasks clears today’s ticks and takes back any bonus stars earned today.</p>
+    <div class="pschool"><span class="pl" id="schoolLbl"></span><button class="act" id="schoolBtn" type="button"></button></div>
+    <div class="pcs" id="parentBody"></div>
+    <button class="closebtn" id="parentClose" type="button">Done</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ==========================================================
+     A. CONFIGURATION – kids and their routines
+     ========================================================== */
+  var KEY = 'routineBoard.v1';
+
+  var KIDS = [
+    { key: 'zoe',   name: 'Zoe',   head: '#7C3AED',
+      confetti: ['#7C3AED', '#14B8A6', '#F472B6', '#FDE047', '#A78BFA', '#5EEAD4'] },
+    { key: 'billy', name: 'Billy', head: '#0284C7',
+      confetti: ['#0284C7', '#10B981', '#38BDF8', '#FDE047', '#6EE7B7', '#F97316'] }
+  ];
+
+  var ROUTINES = {
+    zoe: {
+      morning: [
+        { id: 'changed',   label: 'Get changed',            icon: 'shirt' },
+        { id: 'bathroom',  label: 'Use bathroom',           icon: 'toilet' },
+        { id: 'teeth',     label: 'Brush teeth',            icon: 'teeth' },
+        { id: 'hair',      label: 'Brush hair',             icon: 'hair' },
+        { id: 'makebed',  label: 'Make bed',               icon: 'makebed' },
+        { id: 'room',     label: 'Clean up room',          icon: 'tidy' },
+        { id: 'bag',       label: 'Pack school bag',        icon: 'bag' },
+        { id: 'breakfast', label: 'Eat breakfast',          icon: 'bowl' },
+        { id: 'homework',  label: 'Complete homework',      icon: 'homework' },
+        { id: 'shoes',     label: 'Put on shoes and socks', icon: 'shoes' }
+      ],
+      day: [
+        { id: 'greet',   label: 'Greeted my teacher politely',          icon: 'smile' },
+        { id: 'listen',  label: 'Listened and followed instructions',   icon: 'ear' },
+        { id: 'respect', label: 'Showed respect to teachers and classmates', icon: 'heart' },
+        { id: 'hand',    label: 'Put my hand up and took turns',        icon: 'hand' },
+        { id: 'lunch',   label: 'Ate my lunch',                         icon: 'lunch' },
+        { id: 'water',   label: 'Drank my water',                       icon: 'water' },
+        { id: 'kind',    label: 'Was kind or helped a friend',          icon: 'friends' },
+        { id: 'best',    label: 'Tried my best and learned something new', icon: 'bulb' }
+      ],
+      evening: [
+        { id: 'violin', label: 'Practise violin', icon: 'violin' },
+        { id: 'dinner', label: 'Eat dinner',      icon: 'dinner' },
+        { id: 'shower', label: 'Shower',          icon: 'shower' },
+        { id: 'teeth',  label: 'Brush teeth',     icon: 'teeth' },
+        { id: 'hair',   label: 'Brush hair',      icon: 'hair' },
+        { id: 'read',   label: 'Read books',      icon: 'book' },
+        { id: 'sleep',  label: 'Sleep',           icon: 'bed' }
+      ]
+    },
+    billy: {
+      morning: [
+        { id: 'changed',   label: 'Get changed',            icon: 'shirt' },
+        { id: 'bathroom',  label: 'Use bathroom',           icon: 'toilet' },
+        { id: 'teeth',     label: 'Brush teeth',            icon: 'teeth' },
+        { id: 'makebed',   label: 'Make bed',               icon: 'makebed' },
+        { id: 'room',      label: 'Clean up room',          icon: 'tidy' },
+        { id: 'breakfast', label: 'Eat breakfast',          icon: 'bowl' },
+        { id: 'bag',       label: 'Pack school bag',        icon: 'bag' },
+        { id: 'shoes',     label: 'Put on shoes and socks', icon: 'shoes' }
+      ],
+      day: [
+        { id: 'greet',  label: 'Said hello to my teacher',   icon: 'smile' },
+        { id: 'listen', label: 'Listened and followed instructions', icon: 'ear' },
+        { id: 'lunch',  label: 'Ate my lunch',               icon: 'lunch' },
+        { id: 'share',  label: 'Played kindly and shared',   icon: 'share' },
+        { id: 'words',  label: 'Used kind words',            icon: 'speech' },
+        { id: 'tidy',   label: 'Helped tidy up',             icon: 'tidy' }
+      ],
+      evening: [
+        { id: 'play',   label: 'Play and relax', icon: 'puzzle' },
+        { id: 'dinner', label: 'Eat dinner',     icon: 'dinner' },
+        { id: 'shower', label: 'Shower',         icon: 'shower' },
+        { id: 'teeth',  label: 'Brush teeth',    icon: 'teeth' },
+        { id: 'read',   label: 'Read book',      icon: 'book' },
+        { id: 'sleep',  label: 'Sleep',          icon: 'bed' }
+      ]
+    }
+  };
+
+  /* ==========================================================
+     B. INLINE SVG ILLUSTRATIONS (48x48, no emoji font needed,
+        so every icon renders on older Android versions)
+     ========================================================== */
+  var O = 'stroke="#374151" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"';
+  function svg(inner) {
+    return '<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">' + inner + '</svg>';
+  }
+  function drop(x, y) {
+    return '<path d="M' + x + ' ' + y + ' C' + (x - 5) + ' ' + (y + 5) + ',' + (x - 4) + ' ' + (y + 9) + ',' + x + ' ' + (y + 9) +
+           ' C' + (x + 4) + ' ' + (y + 9) + ',' + (x + 5) + ' ' + (y + 5) + ',' + x + ' ' + y +
+           ' Z" fill="#38BDF8" stroke="#0369A1" stroke-width="1.2"/>';
+  }
+
+  var ICONS = {
+    shirt: svg(
+      '<path d="M17 6 L5 13 L9 22 L15 19 L15 41 L33 41 L33 19 L39 22 L43 13 L31 6 Q24 12 17 6 Z" fill="#60A5FA" ' + O + '/>' +
+      '<path d="M15 28 H33 M15 34 H33" stroke="#BFDBFE" stroke-width="3"/>' +
+      '<path d="M17 6 Q24 12 31 6" fill="none" ' + O + '/>'
+    ),
+    toilet: svg(
+      '<rect x="14" y="5" width="20" height="13" rx="3" fill="#E0F2FE" ' + O + '/>' +
+      '<circle cx="24" cy="10.5" r="2.4" fill="#38BDF8"/>' +
+      '<path d="M9 21 H39 Q39 33 29 35 V41 H19 V35 Q9 33 9 21 Z" fill="#fff" ' + O + '/>' +
+      '<ellipse cx="24" cy="21" rx="15" ry="4" fill="#BAE6FD" ' + O + '/>'
+    ),
+    teeth: svg(
+      '<g transform="rotate(-40 24 24)">' +
+        '<rect x="3" y="21" width="30" height="7" rx="3.5" fill="#F43F5E" ' + O + '/>' +
+        '<rect x="31" y="18" width="13" height="13" rx="3" fill="#fff" ' + O + '/>' +
+        '<rect x="33" y="11" width="3" height="7" rx="1.5" fill="#38BDF8"/>' +
+        '<rect x="37" y="11" width="3" height="7" rx="1.5" fill="#38BDF8"/>' +
+        '<rect x="41" y="11" width="3" height="7" rx="1.5" fill="#38BDF8"/>' +
+        '<rect x="33" y="11" width="11" height="3" rx="1.5" fill="#34D399"/>' +
+      '</g>' +
+      '<circle cx="41" cy="31" r="3" fill="#BAE6FD" stroke="#0369A1" stroke-width="1.5"/>' +
+      '<circle cx="36" cy="38" r="2" fill="#BAE6FD" stroke="#0369A1" stroke-width="1.5"/>'
+    ),
+    hair: svg(
+      '<g transform="rotate(-35 24 24)">' +
+        '<rect x="20" y="24" width="8" height="20" rx="4" fill="#A855F7" ' + O + '/>' +
+        '<rect x="10" y="6" width="28" height="21" rx="9" fill="#F9A8D4" ' + O + '/>' +
+        '<circle cx="17" cy="12" r="1.8" fill="#7C3AED"/><circle cx="24" cy="12" r="1.8" fill="#7C3AED"/><circle cx="31" cy="12" r="1.8" fill="#7C3AED"/>' +
+        '<circle cx="17" cy="19" r="1.8" fill="#7C3AED"/><circle cx="24" cy="19" r="1.8" fill="#7C3AED"/><circle cx="31" cy="19" r="1.8" fill="#7C3AED"/>' +
+      '</g>' +
+      '<path d="M41 5 L42.4 8.6 L46 10 L42.4 11.4 L41 15 L39.6 11.4 L36 10 L39.6 8.6 Z" fill="#FDE047" stroke="#CA8A04" stroke-width="1"/>'
+    ),
+    bag: svg(
+      '<path d="M17 11 Q17 4 24 4 Q31 4 31 11" fill="none" stroke="#9A3412" stroke-width="3.5" stroke-linecap="round"/>' +
+      '<rect x="8" y="9" width="32" height="35" rx="11" fill="#F97316" ' + O + '/>' +
+      '<rect x="13" y="27" width="22" height="13" rx="5" fill="#FDBA74" ' + O + '/>' +
+      '<path d="M8 23 Q24 31 40 23" fill="none" stroke="#9A3412" stroke-width="2" stroke-linecap="round"/>' +
+      '<circle cx="24" cy="33" r="2" fill="#9A3412"/>'
+    ),
+    bowl: svg(
+      '<path d="M37 10 L31 22" stroke="#94A3B8" stroke-width="3" stroke-linecap="round"/>' +
+      '<ellipse cx="38.5" cy="8" rx="4" ry="5" transform="rotate(25 38.5 8)" fill="#E2E8F0" ' + O + '/>' +
+      '<path d="M5 24 H43 Q43 41 24 41 Q5 41 5 24 Z" fill="#60A5FA" ' + O + '/>' +
+      '<ellipse cx="24" cy="24" rx="19" ry="4.5" fill="#F8FAFC" ' + O + '/>' +
+      '<circle cx="13" cy="23" r="3.6" fill="#FBBF24" stroke="#B45309" stroke-width="1.8"/>' +
+      '<circle cx="21" cy="21.5" r="3.6" fill="#FBBF24" stroke="#B45309" stroke-width="1.8"/>' +
+      '<circle cx="29" cy="23" r="3.6" fill="#FBBF24" stroke="#B45309" stroke-width="1.8"/>' +
+      '<circle cx="36" cy="24" r="3.2" fill="#FBBF24" stroke="#B45309" stroke-width="1.8"/>'
+    ),
+    homework: svg(
+      '<rect x="3" y="34" width="26" height="9" rx="2" fill="#EF4444" ' + O + '/>' +
+      '<rect x="6" y="25" width="24" height="9" rx="2" fill="#3B82F6" ' + O + '/>' +
+      '<rect x="4" y="16" width="22" height="9" rx="2" fill="#22C55E" ' + O + '/>' +
+      '<path d="M8 38.5 H25 M10 29.5 H26 M8 20.5 H22" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".7"/>' +
+      '<g transform="rotate(-25 36 20)">' +
+        '<rect x="33" y="6" width="7" height="24" fill="#FBBF24" ' + O + '/>' +
+        '<path d="M33 30 L36.5 38 L40 30 Z" fill="#FDE68A" ' + O + '/>' +
+        '<rect x="33" y="3" width="7" height="5" rx="1.5" fill="#F472B6" ' + O + '/>' +
+      '</g>'
+    ),
+    shoes: svg(
+      '<rect x="6" y="8" width="12" height="16" rx="3" fill="#fff" ' + O + '/>' +
+      '<path d="M6 13 H18 M6 18 H18" stroke="#38BDF8" stroke-width="2.5"/>' +
+      '<path d="M4 25 Q4 22 7 22 L18 22 Q20 30 29 31 L40 33 Q45 34 45 39 L45 41 H4 Z" fill="#F43F5E" ' + O + '/>' +
+      '<rect x="3" y="38" width="43" height="6" rx="3" fill="#fff" ' + O + '/>' +
+      '<path d="M21 26 L27 24.5 M24 29.5 L30 28" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>'
+    ),
+    violin: svg(
+      '<circle cx="8" cy="14" r="2.6" fill="#7C3AED"/>' +
+      '<path d="M10.6 14 V6 Q14 6.5 15 10" fill="none" stroke="#7C3AED" stroke-width="2" stroke-linecap="round"/>' +
+      '<path d="M24 18 C15 18 14 24 18 27 C11 30 12 41 24 43 C36 41 37 30 30 27 C34 24 33 18 24 18 Z" fill="#D97706" ' + O + '/>' +
+      '<rect x="22.4" y="6" width="3.2" height="13" rx="1" fill="#3F2A14"/>' +
+      '<circle cx="24" cy="5" r="3" fill="#92400E" ' + O + '/>' +
+      '<path d="M19 31 Q21 35 19 39 M29 31 Q27 35 29 39" stroke="#3F2A14" stroke-width="1.8" fill="none" stroke-linecap="round"/>' +
+      '<path d="M24 19 V37" stroke="#FDE68A" stroke-width="1.2"/>' +
+      '<path d="M20.5 36 H27.5" stroke="#3F2A14" stroke-width="2"/>' +
+      '<path d="M5 41 L43 22" stroke="#7C2D12" stroke-width="2.6" stroke-linecap="round"/>' +
+      '<path d="M8 42.5 L41 26" stroke="#FEF3C7" stroke-width="1.2" stroke-linecap="round"/>'
+    ),
+    dinner: svg(
+      '<path d="M3 6 V15 Q3 19 6 19 Q9 19 9 15 V6 M6 6 V19 M6 19 V42" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M41 6 Q46 10 45 24 H41 Z" fill="#E2E8F0" ' + O + '/>' +
+      '<path d="M41 24 H45 V42 H41 Z" fill="#94A3B8" ' + O + '/>' +
+      '<circle cx="24" cy="24" r="14" fill="#fff" ' + O + '/>' +
+      '<circle cx="24" cy="24" r="9.5" fill="#FEF9C3" stroke="#FDE68A" stroke-width="2"/>' +
+      '<circle cx="21" cy="22" r="4.3" fill="#F97316"/>' +
+      '<circle cx="28" cy="21" r="3" fill="#22C55E"/>' +
+      '<circle cx="27.5" cy="28" r="3.4" fill="#22C55E"/>' +
+      '<circle cx="19" cy="28.5" r="2.4" fill="#EF4444"/>'
+    ),
+    shower: svg(
+      '<rect x="22" y="1" width="4" height="7" fill="#64748B"/>' +
+      '<path d="M9 19 Q9 7 24 7 Q39 7 39 19 Z" fill="#94A3B8" ' + O + '/>' +
+      drop(13, 23) + drop(24, 23) + drop(35, 23) + drop(18, 34) + drop(30, 34)
+    ),
+    book: svg(
+      '<path d="M3 13 V40 Q14 36 24 42 Q34 36 45 40 V13 Z" fill="#6366F1" ' + O + '/>' +
+      '<path d="M24 14 Q14 8 5 11 V36 Q14 33 24 39 Z" fill="#fff" ' + O + '/>' +
+      '<path d="M24 14 Q34 8 43 11 V36 Q34 33 24 39 Z" fill="#fff" ' + O + '/>' +
+      '<path d="M9 17 Q14 15 20 18 M9 22 Q14 20 20 23 M9 27 Q14 25 20 28 M28 18 Q34 15 39 17 M28 23 Q34 20 39 22 M28 28 Q34 25 39 27" stroke="#A5B4FC" stroke-width="2" fill="none" stroke-linecap="round"/>'
+    ),
+    bed: svg(
+      '<path d="M40 4 C33 4 29 10 31 16 C33 22 41 23 45 19 C38 19 35 12 40 4 Z" fill="#FDE047" stroke="#CA8A04" stroke-width="1.5" stroke-linejoin="round"/>' +
+      '<path d="M22 6 L23 9 L26 10 L23 11 L22 14 L21 11 L18 10 L21 9 Z" fill="#FDE047"/>' +
+      '<rect x="4" y="20" width="5" height="23" rx="2" fill="#92400E" ' + O + '/>' +
+      '<rect x="4" y="28" width="40" height="10" rx="3" fill="#A78BFA" ' + O + '/>' +
+      '<rect x="10" y="22" width="13" height="8" rx="4" fill="#fff" ' + O + '/>' +
+      '<path d="M24 28 H44 V38 H24 Z" fill="#7C3AED" ' + O + '/>' +
+      '<rect x="39" y="38" width="5" height="5" fill="#92400E"/>'
+    ),
+
+    smile: svg(
+      '<circle cx="24" cy="24" r="17" fill="#FDE047" ' + O + '/>' +
+      '<circle cx="18" cy="21" r="2.4" fill="#374151"/><circle cx="30" cy="21" r="2.4" fill="#374151"/>' +
+      '<path d="M15.5 28 Q24 37 32.5 28" fill="none" ' + O + '/>' +
+      '<circle cx="12.5" cy="28" r="2.6" fill="#FDA4AF"/><circle cx="35.5" cy="28" r="2.6" fill="#FDA4AF"/>'
+    ),
+    ear: svg(
+      '<path d="M14 22 C14 11 21 6 28 7 C36 8 40 15 38 23 C37 29 31 31 30 36 C29 41 22 43 19 39 C17 37 18 34 18 32 C14 30 14 26 14 22 Z" fill="#FDBA74" ' + O + '/>' +
+      '<path d="M24 15 C30 14 32 21 28 25 C26 27 25 29 25 31" fill="none" stroke="#C2410C" stroke-width="2" stroke-linecap="round"/>'
+    ),
+    heart: svg(
+      '<path d="M24 41 C8 29 5 18 11 12 C16 7 22 10 24 15 C26 10 32 7 37 12 C43 18 40 29 24 41 Z" fill="#F43F5E" ' + O + '/>' +
+      '<path d="M13 16 Q15 12 19 13" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity=".8"/>'
+    ),
+    hand: svg(
+      '<rect x="14" y="8" width="4.6" height="22" rx="2.3" fill="#FDBA74" ' + O + '/>' +
+      '<rect x="19.6" y="5" width="4.6" height="25" rx="2.3" fill="#FDBA74" ' + O + '/>' +
+      '<rect x="25.2" y="6" width="4.6" height="24" rx="2.3" fill="#FDBA74" ' + O + '/>' +
+      '<rect x="30.8" y="10" width="4.6" height="20" rx="2.3" fill="#FDBA74" ' + O + '/>' +
+      '<path d="M14 31 L8.5 25 Q6.5 22.5 9.5 21 Q12.5 20 15 24 Z" fill="#FDBA74" ' + O + '/>' +
+      '<rect x="14" y="26" width="21.4" height="16" rx="7" fill="#FDBA74" ' + O + '/>'
+    ),
+    lunch: svg(
+      '<path d="M16 18 V13 Q16 10 19 10 H29 Q32 10 32 13 V18" fill="none" ' + O + '/>' +
+      '<rect x="6" y="18" width="36" height="25" rx="5" fill="#34D399" ' + O + '/>' +
+      '<path d="M6 31 H42" stroke="#059669" stroke-width="2"/>' +
+      '<rect x="20" y="26" width="8" height="8" rx="2" fill="#FDE047" ' + O + '/>'
+    ),
+    water: svg(
+      '<path d="M17 9 H31 V13 Q36 16 36 22 V40 Q36 45 31 45 H17 Q12 45 12 40 V22 Q12 16 17 13 Z" fill="#E0F2FE" ' + O + '/>' +
+      '<path d="M12 28 H36 V40 Q36 45 31 45 H17 Q12 45 12 40 Z" fill="#38BDF8"/>' +
+      '<path d="M17 9 H31 V13 Q36 16 36 22 V40 Q36 45 31 45 H17 Q12 45 12 40 V22 Q12 16 17 13 Z" fill="none" ' + O + '/>' +
+      '<rect x="18" y="3" width="12" height="6.5" rx="2" fill="#F43F5E" ' + O + '/>'
+    ),
+    friends: svg(
+      '<path d="M22 45 Q22 33 33 33 Q44 33 44 45 Z" fill="#34D399" ' + O + '/>' +
+      '<circle cx="33" cy="24" r="8" fill="#FCA5A5" ' + O + '/>' +
+      '<path d="M4 45 Q4 33 15 33 Q26 33 26 45 Z" fill="#60A5FA" ' + O + '/>' +
+      '<circle cx="15" cy="24" r="8" fill="#FDBA74" ' + O + '/>' +
+      '<circle cx="12.5" cy="23" r="1.3" fill="#374151"/><circle cx="17.5" cy="23" r="1.3" fill="#374151"/>' +
+      '<circle cx="30.5" cy="23" r="1.3" fill="#374151"/><circle cx="35.5" cy="23" r="1.3" fill="#374151"/>' +
+      '<path d="M24 12 C19 8 19 4 22 4 C23.5 4 24 5.5 24 6 C24 5.5 24.5 4 26 4 C29 4 29 8 24 12 Z" fill="#F43F5E"/>'
+    ),
+    bulb: svg(
+      '<path d="M24 0.5 V3 M5 19 H8.5 M39.5 19 H43 M9 5 L11.5 7.5 M39 5 L36.5 7.5" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round"/>' +
+      '<circle cx="24" cy="20" r="13" fill="#FDE047" ' + O + '/>' +
+      '<path d="M19 23 L24 18 L29 23" fill="none" stroke="#CA8A04" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<rect x="18" y="32" width="12" height="9" rx="2" fill="#94A3B8" ' + O + '/>' +
+      '<path d="M21 45 H27" stroke="#374151" stroke-width="2.5" stroke-linecap="round"/>'
+    ),
+    share: svg(
+      '<path d="M8 11 H37 M31 6 L37 11 L31 16" fill="none" stroke="#3B82F6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M40 37 H11 M17 32 L11 37 L17 42" fill="none" stroke="#22C55E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="24" cy="24" r="9" fill="#F97316" ' + O + '/>' +
+      '<path d="M15.5 22 Q24 29 32.5 22" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>'
+    ),
+    speech: svg(
+      '<path d="M6 8 H42 Q44 8 44 10 V30 Q44 32 42 32 H22 L12 42 V32 H6 Q4 32 4 30 V10 Q4 8 6 8 Z" fill="#F9A8D4" ' + O + '/>' +
+      '<path d="M24 27 C15 21 14 15 18 13 C21 11.5 23.5 13.5 24 15 C24.5 13.5 27 11.5 30 13 C34 15 33 21 24 27 Z" fill="#F43F5E"/>'
+    ),
+    tidy: svg(
+      '<rect x="8" y="13" width="12" height="12" rx="2" fill="#3B82F6" ' + O + '/>' +
+      '<rect x="24" y="9" width="12" height="12" rx="2" transform="rotate(12 30 15)" fill="#FACC15" ' + O + '/>' +
+      '<circle cx="36" cy="22" r="5" fill="#EF4444" ' + O + '/>' +
+      '<path d="M6 26 H42 V40 Q42 44 38 44 H10 Q6 44 6 40 Z" fill="#FB923C" ' + O + '/>' +
+      '<path d="M6 33 H42" stroke="#C2410C" stroke-width="2"/>'
+    ),
+    makebed: svg(
+      '<rect x="4" y="14" width="5" height="29" rx="2" fill="#92400E" ' + O + '/>' +
+      '<rect x="10" y="19" width="14" height="9" rx="4" fill="#fff" ' + O + '/>' +
+      '<rect x="4" y="26" width="40" height="14" rx="3" fill="#34D399" ' + O + '/>' +
+      '<path d="M17 26 V40 M30 26 V40" stroke="#059669" stroke-width="2"/>' +
+      '<rect x="39" y="40" width="5" height="4" fill="#92400E"/>' +
+      '<path d="M38 7 L39.5 11 L43.5 12.5 L39.5 14 L38 18 L36.5 14 L32.5 12.5 L36.5 11 Z" fill="#FDE047" stroke="#CA8A04" stroke-width="1"/>'
+    ),
+    puzzle: svg(
+      '<rect x="4" y="4" width="19" height="19" rx="2" fill="#F43F5E" ' + O + '/>' +
+      '<rect x="25" y="4" width="19" height="19" rx="2" fill="#3B82F6" ' + O + '/>' +
+      '<rect x="4" y="25" width="19" height="19" rx="2" fill="#22C55E" ' + O + '/>' +
+      '<rect x="25" y="25" width="19" height="19" rx="2" fill="#FBBF24" ' + O + '/>' +
+      '<circle cx="24" cy="13.5" r="4.2" fill="#F43F5E" ' + O + '/>' +
+      '<circle cx="13.5" cy="24" r="4.2" fill="#22C55E" ' + O + '/>' +
+      '<circle cx="24" cy="34.5" r="4.2" fill="#FBBF24" ' + O + '/>' +
+      '<circle cx="34.5" cy="24" r="4.2" fill="#3B82F6" ' + O + '/>'
+    )
+  };
+
+  var CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 L9.5 17 L19 7.5"/></svg>';
+
+  /* ==========================================================
+     C. STATE + PERSISTENCE (localStorage, with safe fallback)
+     ========================================================== */
+  var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+                'September', 'October', 'November', 'December'];
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function keyOf(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function todayKey() { return keyOf(new Date()); }
+  function yesterdayKey() { var d = new Date(); d.setDate(d.getDate() - 1); return keyOf(d); }
+  function $(id) { return document.getElementById(id); }
+
+  var MODES = ['morning', 'day', 'evening'];
+  var TAGS = { morning: '☀️ Morning routine', day: '🏫 School day', evening: '🌙 Evening routine' };
+
+  function defaultKid() {
+    return {
+      stars: 0,
+      streak: 0,
+      lastStreakDate: null,
+      streakBefore: null,                       // lets a parent roll back today's streak credit
+      done:  { morning: {}, day: {}, evening: {} },      // task id -> true
+      bonus: { morning: false, day: false, evening: false } // bonus star already awarded today?
+    };
+  }
+  function defaultState() {
+    var s = { date: todayKey(), muted: false, noSchool: null, kids: {} };
+    KIDS.forEach(function (k) { s.kids[k.key] = defaultKid(); });
+    return s;
+  }
+
+  function loadState() {
+    var saved = null;
+    try {
+      var raw = window.localStorage.getItem(KEY);
+      if (raw) { saved = JSON.parse(raw); }
+    } catch (e) { saved = null; }
+
+    var s = defaultState();
+    if (!saved || typeof saved !== 'object') { return s; }
+
+    if (typeof saved.date === 'string') { s.date = saved.date; }
+    s.muted = !!saved.muted;
+    s.noSchool = typeof saved.noSchool === 'string' ? saved.noSchool : null;
+
+    KIDS.forEach(function (k) {
+      var src = (saved.kids && saved.kids[k.key]) || {};
+      var dst = s.kids[k.key];
+      dst.stars = Math.max(0, parseInt(src.stars, 10) || 0);
+      dst.streak = Math.max(0, parseInt(src.streak, 10) || 0);
+      dst.lastStreakDate = typeof src.lastStreakDate === 'string' ? src.lastStreakDate : null;
+      if (src.streakBefore && typeof src.streakBefore === 'object') {
+        dst.streakBefore = {
+          streak: Math.max(0, parseInt(src.streakBefore.streak, 10) || 0),
+          last: typeof src.streakBefore.last === 'string' ? src.streakBefore.last : null
+        };
+      }
+      MODES.forEach(function (m) {
+        dst.done[m] = (src.done && src.done[m] && typeof src.done[m] === 'object') ? src.done[m] : {};
+        dst.bonus[m] = !!(src.bonus && src.bonus[m]);
+      });
+    });
+    return s;
+  }
+
+  function save() {
+    try { window.localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage full or blocked: carry on in memory */ }
+  }
+
+  var state = loadState();
+  var currentMode = null;       // 'morning' | 'evening'
+  var override = null;          // manual mode set by the header pills
+  var overrideAuto = null;      // automatic mode at the time of the override
+  var activeTab = KIDS[0].key;  // used only by the small-portrait tab layout
+
+  /* ==========================================================
+     D. SOUND (Web Audio API – everything is synthesised)
+     ========================================================== */
+  var audioCtx = null;
+  function ensureAudio() {
+    if (state.muted) { return null; }
+    try {
+      if (!audioCtx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) { return null; }
+        audioCtx = new AC();
+      }
+      if (audioCtx.state !== 'running' && audioCtx.resume) { audioCtx.resume(); }
+      return audioCtx;
+    } catch (e) { return null; }
+  }
+  function tone(ctx, freq, start, dur, type, vol) {
+    try {
+      var t0 = ctx.currentTime + start;
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.05);
+    } catch (e) { /* ignore audio errors */ }
+  }
+  function playChime() {                       // gentle two-note chime on tick
+    var c = ensureAudio(); if (!c) { return; }
+    tone(c, 784, 0, 0.35, 'sine', 0.18);
+    tone(c, 1047, 0.11, 0.45, 'sine', 0.18);
+  }
+  function playUndo() {                        // soft low blip on untick
+    var c = ensureAudio(); if (!c) { return; }
+    tone(c, 392, 0, 0.14, 'triangle', 0.10);
+  }
+  function playFanfare() {                     // routine complete
+    var c = ensureAudio(); if (!c) { return; }
+    var notes = [523, 659, 784, 1047];
+    for (var i = 0; i < notes.length; i++) { tone(c, notes[i], 0.12 * i, 0.4, 'sine', 0.2); }
+    tone(c, 1319, 0.5, 0.7, 'sine', 0.18);
+    tone(c, 1047, 0.5, 0.7, 'triangle', 0.1);
+  }
+  function updateMuteBtn() {
+    var b = $('btnMute');
+    b.textContent = state.muted ? '🔇' : '🔊';
+    b.setAttribute('aria-pressed', state.muted ? 'true' : 'false');
+  }
+
+  /* ==========================================================
+     E. BUILD THE SCREEN
+     ========================================================== */
+  function buildShell() {
+    var board = $('board');
+    var tabs = $('tabs');
+    var html = '';
+    var tabHtml = '';
+
+    KIDS.forEach(function (k) {
+      html +=
+        '<section class="panel ' + k.key + (k.key === activeTab ? ' active' : '') + '" id="panel-' + k.key + '" data-kid="' + k.key + '">' +
+          '<div class="phead">' +
+            '<div class="prow">' +
+              '<div class="who"><div class="name">' + k.name + '</div><div class="tag" id="tag-' + k.key + '"></div></div>' +
+              '<div class="badges">' +
+                '<div class="stars" id="stars-' + k.key + '" aria-label="Total stars"></div>' +
+                '<div class="streak" id="streak-' + k.key + '"></div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="prog">' +
+              '<div class="bar" id="barwrap-' + k.key + '"><i id="bar-' + k.key + '"></i></div>' +
+              '<div class="count" id="count-' + k.key + '"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="tasks" id="tasks-' + k.key + '"></div>' +
+        '</section>';
+
+      tabHtml += '<button type="button" data-tab="' + k.key + '" id="tab-' + k.key + '" style="--c:' + k.head + '"></button>';
+    });
+
+    board.innerHTML = html;
+    tabs.innerHTML = tabHtml;
+    setTab(activeTab);
+  }
+
+  function setTab(key) {
+    activeTab = key;
+    KIDS.forEach(function (k) {
+      $('panel-' + k.key).classList.toggle('active', k.key === key);
+      $('tab-' + k.key).classList.toggle('on', k.key === key);
+    });
+  }
+
+  function makeCard(task, isDone) {
+    var b = document.createElement('div');            // div (not button): old Safari handles flex on divs reliably
+    b.setAttribute('role', 'button');
+    b.setAttribute('tabindex', '0');
+    b.className = 'card' + (isDone ? ' done' : '');
+    b.setAttribute('data-id', task.id);
+    b.setAttribute('aria-pressed', isDone ? 'true' : 'false');
+    b.innerHTML =
+      '<span class="ico">' + ICONS[task.icon] + '</span>' +
+      '<span class="lbl">' + task.label + '</span>' +
+      '<span class="chk">' + CHECK_SVG + '</span>';
+    return b;
+  }
+
+  function buildTasks() {
+    KIDS.forEach(function (k) {
+      var list = ROUTINES[k.key][currentMode];
+      var box = $('tasks-' + k.key);
+      var done = state.kids[k.key].done[currentMode];
+      box.className = 'tasks' + (list.length >= 6 ? ' two' : '');   // 6+ tasks use a 2-column sub-grid
+      box.innerHTML = '';
+      list.forEach(function (t) { box.appendChild(makeCard(t, !!done[t.id])); });
+      box.scrollTop = 0;
+      $('tag-' + k.key).textContent = TAGS[currentMode];
+      refreshKid(k.key);
+    });
+  }
+
+  function refreshKid(key) {
+    var s = state.kids[key];
+    var list = ROUTINES[key][currentMode];
+    var n = 0;
+    list.forEach(function (t) { if (s.done[currentMode][t.id]) { n++; } });
+    var total = list.length;
+
+    $('stars-' + key).textContent = '⭐ ' + s.stars;
+    var st = $('streak-' + key);
+    st.textContent = s.streak > 0 ? '🔥 ' + s.streak + '-day streak' : '🔥 Start a streak!';
+    st.classList.toggle('dim', s.streak === 0);
+
+    $('bar-' + key).style.transform = 'scaleX(' + (total ? n / total : 0) + ')';
+    $('barwrap-' + key).classList.toggle('full', total > 0 && n === total);
+    $('count-' + key).textContent = n + ' / ' + total;
+
+    var kid = KIDS.filter(function (k) { return k.key === key; })[0];
+    $('tab-' + key).textContent = kid.name + '  ⭐ ' + s.stars;
+  }
+
+  function bump(el) {
+    el.classList.remove('bump');
+    void el.offsetWidth;                       // restart the animation
+    el.classList.add('bump');
+  }
+
+  /* ==========================================================
+     F. GAME LOGIC – ticking, bonus stars, streaks
+     ========================================================== */
+  function isComplete(key, mode) {
+    var s = state.kids[key];
+    return ROUTINES[key][mode].every(function (t) { return !!s.done[mode][t.id]; });
+  }
+
+  // Weekdays are school days unless a parent has marked today as "no school".
+  function isSchoolDay(d) {
+    var wd = d.getDay();
+    return wd !== 0 && wd !== 6 && state.noSchool !== keyOf(d);
+  }
+  function requiredModes() {
+    return isSchoolDay(new Date()) ? MODES : ['morning', 'evening'];
+  }
+
+  // Every required routine finished today -> extend the streak (once per day).
+  function updateStreak(key) {
+    var s = state.kids[key];
+    if (s.lastStreakDate === state.date) { return false; }
+    if (!requiredModes().every(function (m) { return isComplete(key, m); })) { return false; }
+    s.streakBefore = { streak: s.streak, last: s.lastStreakDate };
+    s.streak = (s.lastStreakDate === yesterdayKey()) ? s.streak + 1 : 1;
+    s.lastStreakDate = state.date;
+    return true;
+  }
+
+  function onTap(key, card) {
+    var now = Date.now();
+    if (now - (card._last || 0) < 300) { return; }   // ignore accidental double-taps
+    card._last = now;
+
+    var id = card.getAttribute('data-id');
+    var s = state.kids[key];
+    var wasDone = !!s.done[currentMode][id];
+
+    if (wasDone) { delete s.done[currentMode][id]; } else { s.done[currentMode][id] = true; }
+    card.classList.toggle('done', !wasDone);
+    card.setAttribute('aria-pressed', wasDone ? 'false' : 'true');
+    card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop');
+
+    var awarded = false, streakUp = false;
+    if (!wasDone && isComplete(key, currentMode)) {
+      if (!s.bonus[currentMode]) {                   // never award twice for the same routine/day
+        s.bonus[currentMode] = true;
+        s.stars += 1;
+        awarded = true;
+      }
+      streakUp = updateStreak(key);
+    }
+
+    save();
+    refreshKid(key);
+
+    if (wasDone) { playUndo(); return; }
+    if (awarded || streakUp) {
+      bump($('stars-' + key));
+      var lines = [];
+      if (awarded) { lines.push('+1 Bonus Star ⭐'); }
+      if (streakUp) { lines.push('🔥 ' + state.kids[key].streak + '-day streak!'); }
+      celebrate(key, lines);
+    } else {
+      playChime();
+    }
+  }
+
+  /* ---- Midnight reset (also runs when the tablet wakes) ---- */
+  function checkDay() {
+    var k = todayKey();
+    if (k === state.date) { return; }
+    var y = yesterdayKey();
+    KIDS.forEach(function (kid) {
+      var s = state.kids[kid.key];
+      s.done = { morning: {}, day: {}, evening: {} };
+      s.bonus = { morning: false, day: false, evening: false };
+      s.streakBefore = null;
+      // Streak survives only if the last full day was yesterday
+      if (s.lastStreakDate && s.lastStreakDate !== y) { s.streak = 0; }
+    });
+    state.date = k;
+    save();
+    if (currentMode) { buildTasks(); }
+  }
+
+  /* ---- Automatic Morning / Evening switching ---- */
+  function autoMode(d) {
+    var m = d.getHours() * 60 + d.getMinutes();
+    if (m >= 300 && m < 600) { return 'morning'; }          // 5:00 AM to 9:59 AM
+    if (m >= 600 && m < 1050) {                             // 10:00 AM to 5:29 PM
+      return isSchoolDay(d) ? 'day' : 'morning';            // no school: keep the morning list showing
+    }
+    return 'evening';                                       // 5:30 PM to 4:59 AM
+  }
+  function effectiveMode(d) {
+    var a = autoMode(d);
+    if (override && overrideAuto !== a) { override = null; }  // automatic period changed: hand control back
+    return override || a;
+  }
+  function applyMode(force) {
+    var m = effectiveMode(new Date());
+    if (m === currentMode && !force) { return; }
+    currentMode = m;
+    document.body.setAttribute('data-mode', m);
+    [['btnMorning', 'morning'], ['btnDay', 'day'], ['btnEvening', 'evening']].forEach(function (p) {
+      $(p[0]).classList.toggle('on', m === p[1]);
+      $(p[0]).setAttribute('aria-pressed', m === p[1] ? 'true' : 'false');
+    });
+    buildTasks();
+  }
+  function setOverride(mode) {
+    var a = autoMode(new Date());
+    if (mode === a) { override = null; } else { override = mode; overrideAuto = a; }
+    applyMode(true);
+  }
+
+  /* ==========================================================
+     G. HEADER CLOCK
+     ========================================================== */
+  var lastMinuteKey = '';
+  function renderHeader(d) {
+    $('dow').textContent = DAYS[d.getDay()];
+    $('dmy').textContent = d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+    var h = d.getHours();
+    var ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    $('time').textContent = h + ':' + pad(d.getMinutes());
+    $('ampm').textContent = ap;
+  }
+  function tick() {
+    var d = new Date();
+    var mk = d.getDate() + '/' + d.getHours() + ':' + d.getMinutes();
+    if (mk !== lastMinuteKey) { lastMinuteKey = mk; renderHeader(d); }
+    checkDay();
+    applyMode(false);
+  }
+
+  /* ==========================================================
+     H. CELEBRATION – lightweight canvas confetti + banner
+     ========================================================== */
+  var canvas = $('confetti');
+  var cx = canvas.getContext('2d');
+  var raf = 0;
+  var bannerTimer = 0;
+  var reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  function launchConfetti(colors) {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    var W = canvas.width = window.innerWidth;
+    var H = canvas.height = window.innerHeight;
+    var count = reduced ? 24 : 70;
+    var parts = [];
+    for (var i = 0; i < count; i++) {
+      parts.push({
+        x: Math.random() * W, y: -10 - Math.random() * H * 0.6,
+        vx: (Math.random() - 0.5) * 2.4, vy: 2.2 + Math.random() * 3,
+        w: 6 + Math.random() * 6, h: 9 + Math.random() * 7,
+        r: Math.random() * 6.28, vr: (Math.random() - 0.5) * 0.3,
+        c: colors[i % colors.length]
+      });
+    }
+    canvas.style.display = 'block';
+    var started = Date.now();
+
+    function frame() {
+      cx.clearRect(0, 0, W, H);
+      var alive = 0;
+      for (var j = 0; j < parts.length; j++) {
+        var p = parts[j];
+        p.y += p.vy;
+        p.x += p.vx + Math.sin(p.y / 30) * 0.6;
+        p.r += p.vr;
+        if (p.y < H + 20) {
+          alive++;
+          cx.save();
+          cx.translate(p.x, p.y);
+          cx.rotate(p.r);
+          cx.fillStyle = p.c;
+          cx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+          cx.restore();
+        }
+      }
+      if (alive && Date.now() - started < 6000) {
+        raf = requestAnimationFrame(frame);
+      } else {
+        cx.clearRect(0, 0, W, H);
+        canvas.style.display = 'none';
+        raf = 0;
+      }
+    }
+    raf = requestAnimationFrame(frame);
+  }
+
+  function showBanner(kid, lines) {
+    var b = $('banner');
+    b.style.background = kid.head;
+    var html = '<div class="bt">🎉 Great Job, ' + kid.name + '!</div>';
+    lines.forEach(function (l) { html += '<div class="bs">' + l + '</div>'; });
+    b.innerHTML = html;
+    b.classList.add('show');
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(hideBanner, 3500);
+  }
+  function hideBanner() { $('banner').classList.remove('show'); }
+
+  function celebrate(key, lines) {
+    var kid = KIDS.filter(function (k) { return k.key === key; })[0];
+    playFanfare();
+    launchConfetti(kid.confetti);
+    showBanner(kid, lines);
+  }
+
+  /* ==========================================================
+     I. HIDDEN PARENT CONTROLS (hold the date for 3 seconds)
+     ========================================================== */
+  function renderParent() {
+    var body = $('parentBody');
+    body.innerHTML = '';
+    KIDS.forEach(function (k) {
+      var s = state.kids[k.key];
+      var box = document.createElement('div');
+      box.className = 'pc';
+      box.style.borderColor = k.head;
+      box.innerHTML =
+        '<h3 style="background:' + k.head + '">' + k.name + '</h3>' +
+        '<div class="prow2"><span class="pl">Total stars</span>' +
+          '<button class="sq" type="button" data-a="minus" aria-label="Take one star">−</button>' +
+          '<b class="pv">' + s.stars + '</b>' +
+          '<button class="sq" type="button" data-a="plus" aria-label="Add one star">+</button></div>' +
+        '<div class="prow2"><span class="pl">Streak: ' + s.streak + ' day' + (s.streak === 1 ? '' : 's') + '</span>' +
+          '<button class="act" type="button" data-a="streak">Reset streak</button></div>' +
+        '<div class="prow2"><span class="pl">Today’s tasks</span>' +
+          '<button class="act" type="button" data-a="today">Reset today’s tasks</button></div>';
+      var btns = box.querySelectorAll('button');
+      for (var i = 0; i < btns.length; i++) {
+        (function (btn) { btn.addEventListener('click', function () { onParentAction(k.key, btn); }); })(btns[i]);
+      }
+      body.appendChild(box);
+    });
+  }
+
+  function onParentAction(key, btn) {
+    var a = btn.getAttribute('data-a');
+    if (a === 'plus' || a === 'minus') { changeStars(key, a === 'plus' ? 1 : -1); return; }
+
+    // Destructive actions need a second tap within 3 seconds
+    if (!btn._armed) {
+      btn._armed = true;
+      var old = btn.textContent;
+      btn.textContent = 'Tap again to confirm';
+      btn.classList.add('armed');
+      btn._timer = setTimeout(function () {
+        btn._armed = false;
+        btn.textContent = old;
+        btn.classList.remove('armed');
+      }, 3000);
+      return;
+    }
+    clearTimeout(btn._timer);
+    if (a === 'streak') { resetStreak(key); } else { resetToday(key); }
+  }
+
+  function changeStars(key, delta) {
+    var s = state.kids[key];
+    s.stars = Math.max(0, s.stars + delta);
+    save();
+    refreshKid(key);
+    renderParent();
+  }
+  function resetStreak(key) {
+    var s = state.kids[key];
+    s.streak = 0;
+    s.lastStreakDate = null;
+    s.streakBefore = null;
+    save();
+    refreshKid(key);
+    renderParent();
+  }
+  function resetToday(key) {
+    var s = state.kids[key];
+    MODES.forEach(function (m) {
+      s.done[m] = {};
+      if (s.bonus[m]) { s.stars = Math.max(0, s.stars - 1); s.bonus[m] = false; }   // take back today's bonus
+    });
+    if (s.lastStreakDate === state.date && s.streakBefore) {
+      s.streak = s.streakBefore.streak;
+      s.lastStreakDate = s.streakBefore.last;
+    }
+    s.streakBefore = null;
+    save();
+    buildTasks();
+    renderParent();
+  }
+
+  function renderSchool() {
+    var off = state.noSchool === state.date;
+    var weekend = new Date().getDay() % 6 === 0;
+    $('schoolLbl').textContent = weekend ? 'Weekend: school day is skipped' :
+      (off ? 'Today: no school (school day skipped)' : 'Today: school day');
+    $('schoolBtn').textContent = off ? 'Mark as school day' : 'Mark as no school';
+    $('schoolBtn').disabled = weekend;
+  }
+  function toggleSchool() {
+    state.noSchool = (state.noSchool === state.date) ? null : state.date;
+    save();
+    renderSchool();
+    applyMode(false);
+  }
+
+  function openParent() { renderParent(); renderSchool(); $('parentModal').hidden = false; }
+  function closeParent() { $('parentModal').hidden = true; }
+
+  /* ==========================================================
+     J. EVENT WIRING
+     ========================================================== */
+  // Tapping tasks (one listener for the whole board)
+  $('board').addEventListener('click', function (e) {
+    var node = e.target;
+    while (node && node !== this && !(node.classList && node.classList.contains('card'))) { node = node.parentNode; }
+    if (!node || node === this) { return; }
+    var panel = node.parentNode.parentNode;     // .card -> .tasks -> .panel
+    onTap(panel.getAttribute('data-kid'), node);
+  });
+
+  // Small-portrait tabs
+  $('tabs').addEventListener('click', function (e) {
+    var t = e.target;
+    while (t && t !== this && !t.getAttribute('data-tab')) { t = t.parentNode; }
+    if (t && t !== this) { setTab(t.getAttribute('data-tab')); }
+  });
+
+  // Header controls
+  $('btnMorning').addEventListener('click', function () { setOverride('morning'); });
+  $('btnDay').addEventListener('click', function () { setOverride('day'); });
+  $('btnEvening').addEventListener('click', function () { setOverride('evening'); });
+  $('btnMute').addEventListener('click', function () {
+    state.muted = !state.muted;
+    save();
+    updateMuteBtn();
+    if (!state.muted) { ensureAudio(); playChime(); }   // the tap is the user gesture that unlocks audio
+  });
+
+  // First touch unlocks audio on browsers that require a gesture
+  function unlockAudio() {
+    ensureAudio();
+    document.removeEventListener('touchend', unlockAudio, false);
+    document.removeEventListener('click', unlockAudio, false);
+  }
+  document.addEventListener('touchend', unlockAudio, false);
+  document.addEventListener('click', unlockAudio, false);
+
+  // iOS Safari: enable :active styles, block pinch-zoom
+  document.addEventListener('touchstart', function () {}, true);
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, false);
+
+  // Banner and modal
+  $('banner').addEventListener('click', hideBanner);
+  $('parentClose').addEventListener('click', closeParent);
+  $('schoolBtn').addEventListener('click', toggleSchool);
+
+  // Long-press (3 s) on the date opens the parent controls
+  var lpTimer = 0;
+  var dateBlk = $('dateBlk');
+  function startLP() { clearTimeout(lpTimer); lpTimer = setTimeout(openParent, 3000); }
+  function cancelLP() { clearTimeout(lpTimer); }
+  // touch + mouse events (Pointer Events do not exist in Safari 12)
+  dateBlk.addEventListener('touchstart', startLP, false);
+  dateBlk.addEventListener('touchend', cancelLP, false);
+  dateBlk.addEventListener('touchmove', cancelLP, false);
+  dateBlk.addEventListener('touchcancel', cancelLP, false);
+  dateBlk.addEventListener('mousedown', startLP, false);
+  dateBlk.addEventListener('mouseup', cancelLP, false);
+  dateBlk.addEventListener('mouseleave', cancelLP, false);
+  dateBlk.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  // Re-check the day and mode when the tablet wakes or the page returns
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { tick(); } });
+  window.addEventListener('focus', tick);
+  window.addEventListener('pageshow', tick);
+
+  /* ==========================================================
+     K. START
+     ========================================================== */
+  buildShell();
+  updateMuteBtn();
+  renderHeader(new Date());
+  checkDay();            // midnight reset if the stored day is out of date
+  applyMode(true);       // choose Morning or Evening and draw the tasks
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>
